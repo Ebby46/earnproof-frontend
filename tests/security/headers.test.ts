@@ -1,0 +1,167 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { buildSecurityPolicy } from "@/config/security-headers";
+import { loadPublicEnv, resolveDeploymentProfile } from "@/lib/validation/env";
+import { toSafeExternalHref } from "@/lib/validation/external-url";
+
+const fixtures = JSON.parse(
+  readFileSync(join(__dirname, "fixtures/blocked-content.json"), "utf8"),
+) as {
+  unapprovedInlineScript: string;
+  unapprovedConnectOrigin: string;
+  unapprovedFrame: string;
+  javascriptHref: string;
+  dataHref: string;
+  fileHref: string;
+  trustedHelp: string;
+};
+
+const localEnv = {
+  NEXT_PUBLIC_APP_URL: "http://localhost:3000",
+  NEXT_PUBLIC_API_URL: "http://localhost:4000/api/v1",
+  NEXT_PUBLIC_STELLAR_NETWORK: "testnet",
+  NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015",
+  NEXT_PUBLIC_STELLAR_HORIZON_URL: "https://horizon-testnet.stellar.org",
+  NEXT_PUBLIC_HELP_URL: "https://help.earnproof.com",
+};
+
+describe("browser security policy", () => {
+  it("emits explicit frame, MIME, referrer, permissions, and CSP headers", () => {
+    const policy = buildSecurityPolicy({
+      env: localEnv,
+      nonce: "test-nonce",
+    });
+    const keys = policy.headers.map((header) => header.key);
+
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        "Content-Security-Policy",
+        "X-Frame-Options",
+        "X-Content-Type-Options",
+        "Referrer-Policy",
+        "Permissions-Policy",
+      ]),
+    );
+    expect(policy.headers.find((header) => header.key === "X-Frame-Options")?.value).toBe(
+      "DENY",
+    );
+    expect(
+      policy.headers.find((header) => header.key === "X-Content-Type-Options")?.value,
+    ).toBe("nosniff");
+    expect(
+      policy.headers.find((header) => header.key === "Referrer-Policy")?.value,
+    ).toBe("strict-origin-when-cross-origin");
+    expect(
+      policy.headers.find((header) => header.key === "Permissions-Policy")?.value,
+    ).toContain("camera=(self)");
+  });
+
+  it("does not add unsafe-inline or host wildcards to script or connect sources", () => {
+    const policy = buildSecurityPolicy({ env: localEnv, nonce: "test-nonce" });
+
+    expect(policy.csp).not.toMatch(/unsafe-inline/);
+    expect(policy.csp).not.toMatch(/script-src[^;]*\*/);
+    expect(policy.csp).not.toMatch(/connect-src[^;]*\*/);
+    expect(policy.csp).toContain("'nonce-test-nonce'");
+    expect(policy.csp).toContain("object-src 'none'");
+    expect(policy.csp).toContain("frame-src 'none'");
+    expect(policy.csp).toContain("frame-ancestors 'none'");
+  });
+
+  it("allows documented wallet/API origins and blocks unapproved connect/frame hosts", () => {
+    const policy = buildSecurityPolicy({ env: localEnv, nonce: "test-nonce" });
+
+    expect(policy.connectSrc).toEqual(
+      expect.arrayContaining([
+        "'self'",
+        "http://localhost:3000",
+        "http://localhost:4000",
+        "https://horizon-testnet.stellar.org",
+      ]),
+    );
+    expect(policy.csp).not.toContain(fixtures.unapprovedConnectOrigin);
+    expect(policy.csp).not.toContain(fixtures.unapprovedFrame);
+    expect(policy.csp).not.toContain(fixtures.unapprovedInlineScript);
+  });
+
+  it("enables HSTS only for https app origins", () => {
+    const httpPolicy = buildSecurityPolicy({ env: localEnv, nonce: "n" });
+    expect(httpPolicy.headers.some((header) => header.key === "Strict-Transport-Security")).toBe(
+      false,
+    );
+
+    const httpsPolicy = buildSecurityPolicy({
+      env: {
+        ...localEnv,
+        NEXT_PUBLIC_APP_URL: "https://app.earnproof.example",
+      },
+      nonce: "n",
+    });
+    expect(
+      httpsPolicy.headers.find((header) => header.key === "Strict-Transport-Security")?.value,
+    ).toContain("max-age=63072000");
+    expect(httpsPolicy.csp).toContain("upgrade-insecure-requests");
+  });
+});
+
+describe("deployment origin requirements", () => {
+  it("uses local defaults when preview/production origins are not required", () => {
+    expect(resolveDeploymentProfile({})).toBe("local");
+    expect(loadPublicEnv({}).NEXT_PUBLIC_APP_URL).toBe("http://localhost:3000");
+  });
+
+  it("fails clearly when preview origins are missing", () => {
+    expect(() =>
+      loadPublicEnv({
+        VERCEL_ENV: "preview",
+      }),
+    ).toThrow(/preview policy/);
+  });
+
+  it("fails clearly when production origins are missing", () => {
+    expect(() =>
+      loadPublicEnv({
+        VERCEL_ENV: "production",
+      }),
+    ).toThrow(/production policy/);
+  });
+
+  it("accepts a complete production origin set", () => {
+    const env = loadPublicEnv({
+      VERCEL_ENV: "production",
+      NEXT_PUBLIC_APP_URL: "https://app.earnproof.example",
+      NEXT_PUBLIC_API_URL: "https://api.earnproof.example/api/v1",
+      NEXT_PUBLIC_STELLAR_NETWORK: "testnet",
+      NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015",
+      NEXT_PUBLIC_STELLAR_HORIZON_URL: "https://horizon-testnet.stellar.org",
+      NEXT_PUBLIC_HELP_URL: "https://help.earnproof.com",
+    });
+    expect(env.NEXT_PUBLIC_APP_URL).toBe("https://app.earnproof.example");
+  });
+});
+
+describe("external URL safety", () => {
+  const allowedOrigins = ["https://help.earnproof.com"];
+
+  it("allows documented HTTPS help links with safe rel", () => {
+    const result = toSafeExternalHref(fixtures.trustedHelp, { allowedOrigins });
+    expect(result).toEqual({
+      ok: true,
+      href: fixtures.trustedHelp,
+      origin: "https://help.earnproof.com",
+      rel: "noopener noreferrer",
+    });
+  });
+
+  it("rejects javascript, data, and file URLs without rendering them", () => {
+    expect(toSafeExternalHref(fixtures.javascriptHref, { allowedOrigins }).ok).toBe(false);
+    expect(toSafeExternalHref(fixtures.dataHref, { allowedOrigins }).ok).toBe(false);
+    expect(toSafeExternalHref(fixtures.fileHref, { allowedOrigins }).ok).toBe(false);
+  });
+
+  it("rejects unapproved origins", () => {
+    expect(
+      toSafeExternalHref(fixtures.unapprovedConnectOrigin, { allowedOrigins }).ok,
+    ).toBe(false);
+  });
+});
