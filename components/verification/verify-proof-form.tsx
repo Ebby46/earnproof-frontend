@@ -7,6 +7,7 @@ import {
   VerificationPanel,
   VerifyProofResponse,
 } from "@/components/verification/verification-panel";
+import { extractProofId } from "@/lib/validation/proof-input";
 
 export function VerifyProofForm() {
   const searchParams = useSearchParams();
@@ -86,19 +87,4 @@ export function VerifyProofForm() {
       <VerificationPanel result={result} />
     </div>
   );
-}
-
-function extractProofId(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  try {
-    const url = new URL(trimmed);
-    const match = url.pathname.match(/\/proofs\/([^/]+)(?:\/verify)?$/);
-    return match?.[1] ?? null;
-  } catch {
-    return trimmed;
-  }
 }
