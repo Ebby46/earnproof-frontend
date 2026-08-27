@@ -18,7 +18,12 @@ const eslintConfig = defineConfig([
     // runs directly via `node scripts/performance/*.js` in CI, outside the
     // Next.js bundler, so CommonJS `require`/`module.exports` is the
     // correct pattern here rather than an app-code smell.
-    files: ["scripts/performance/**/*.js"],
+    files: [
+      "scripts/performance/**/*.js",
+      "scripts/generate-api-types/**/*.js",
+      "scripts/check-api-drift.js",
+      "lib/api/generated/**/*.ts",
+    ],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
     },
