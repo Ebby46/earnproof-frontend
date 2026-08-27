@@ -5,6 +5,7 @@ describe("toRoutePattern", () => {
     expect(toRoutePattern("/")).toBe("/");
     expect(toRoutePattern("/verify")).toBe("/verify");
     expect(toRoutePattern("/verify/credential")).toBe("/verify/credential");
+    expect(toRoutePattern("/verify/scan")).toBe("/verify/scan");
     expect(toRoutePattern("/proofs/create")).toBe("/proofs/create");
   });
 

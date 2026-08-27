@@ -13,6 +13,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "jest",
+    "generate:api-types": "node scripts/generate-api-types/index.js",
+    "test:contracts": "node scripts/check-api-drift.js && node scripts/generate-api-types/index.js --check",
     "test:e2e:visual": "playwright test --config=playwright.config.ts",
     "test:e2e:visual:update": "playwright test --config=playwright.config.ts --update-snapshots",
     "perf:check": "node scripts/performance/check-budgets.js"
