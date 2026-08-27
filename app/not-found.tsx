@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { ExternalLink } from "@/components/common/external-link";
 import { PageHeading } from "@/components/common/page-heading";
 import { pageContainer } from "@/components/common/production-ui";
 import { PublicShell } from "@/components/layout/public-shell";
+import { appConfig } from "@/config/app";
 
 export default function NotFound() {
   return (
@@ -72,14 +74,12 @@ export default function NotFound() {
             >
               Go to dashboard
             </Link>
-            <a
-              href="https://help.earnproof.com"
-              target="_blank"
-              rel="noreferrer"
+            <ExternalLink
               className="inline-flex h-11 items-center justify-center rounded-lg border border-slate-400/30 bg-transparent px-6 text-sm font-medium text-slate-300 transition hover:bg-slate-400/10 hover:text-white focus:outline-2 focus:outline-offset-2 focus:outline-cyan-400 sm:h-10"
+              href={appConfig.helpUrl}
             >
               Open help centre
-            </a>
+            </ExternalLink>
           </div>
         </div>
       </div>

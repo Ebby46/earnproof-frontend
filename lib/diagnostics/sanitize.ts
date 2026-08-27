@@ -29,6 +29,7 @@ export const KNOWN_ROUTE_PATTERNS = [
   "/terms",
   "/verify",
   "/verify/credential",
+  "/verify/scan",
 ] as const;
 
 export type KnownRoutePattern = (typeof KNOWN_ROUTE_PATTERNS)[number];

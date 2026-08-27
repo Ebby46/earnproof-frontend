@@ -1,3 +1,7 @@
+import { ArtifactExport } from "@/components/proofs/artifact-export";
+import { appConfig } from "@/config/app";
+import { buildCredentialExport, buildVerificationLinkExport } from "@/lib/credentials/export";
+
 export type VerificationResult =
   | "VALID"
   | "EXPIRED"
@@ -85,7 +89,8 @@ export function VerificationPanel({ result }: { result: VerifyProofResponse | nu
       </div>
 
       {result.credential && result.proof ? (
-        <dl className="mt-5 grid gap-4 text-sm text-slate-300 sm:grid-cols-2">
+        <>
+          <dl className="mt-5 grid gap-4 text-sm text-slate-300 sm:grid-cols-2">
           <ResultItem label="Proof ID" value={result.proof.id} />
           <ResultItem label="Network" value={result.proof.network} />
           <ResultItem
@@ -112,6 +117,22 @@ export function VerificationPanel({ result }: { result: VerifyProofResponse | nu
             value={result.credential.proof.credentialHash}
           />
         </dl>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <ArtifactExport
+              plan={buildCredentialExport({
+                credential: result.credential,
+                proof: result.proof,
+              })}
+              title="Export credential JSON"
+            />
+            <ArtifactExport
+              plan={buildVerificationLinkExport(
+                `${appConfig.appUrl}/verify?proof=${encodeURIComponent(result.proof.id)}`,
+              )}
+              title="Export verification link"
+            />
+          </div>
+        </>
       ) : (
         <p className="mt-5 text-sm leading-6 text-slate-300">
           No matching EarnProof credential was found for this identifier.
