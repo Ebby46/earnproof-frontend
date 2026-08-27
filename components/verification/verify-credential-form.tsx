@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { apiClient } from "@/lib/api/client";
 import {
   VerificationPanel,
@@ -15,6 +15,13 @@ export function VerifyCredentialForm() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    if (error) {
+      errorRef.current?.focus();
+    }
+  }, [error]);
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -119,7 +126,7 @@ export function VerifyCredentialForm() {
           />
           {/* File upload — secondary option, visually subtle */}
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">or</span>
+            <span className="text-xs text-slate-300">or</span>
             <button
               className="text-xs text-cyan-200 underline underline-offset-2 transition-colors hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
               onClick={() => fileInputRef.current?.click()}
@@ -156,9 +163,21 @@ export function VerifyCredentialForm() {
           </p>
         </div>
 
-        {error ? <p className="text-sm text-rose-200">{error}</p> : null}
+        {error ? (
+          <p
+            aria-live="assertive"
+            className="text-sm text-rose-200 focus-visible:outline-none"
+            id="verify-credential-error"
+            ref={errorRef}
+            role="alert"
+            tabIndex={-1}
+          >
+            {error}
+          </p>
+        ) : null}
 
         <button
+          aria-describedby={error ? "verify-credential-error" : undefined}
           className="h-11 w-full rounded-lg bg-cyan-300 px-6 text-sm font-medium text-slate-950 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300 sm:h-10 sm:w-fit"
           disabled={isLoading}
           type="submit"

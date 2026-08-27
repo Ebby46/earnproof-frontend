@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback, useRef, useState } from "react";
 import { PageHeading } from "@/components/common/page-heading";
 import { pageContainer } from "@/components/common/production-ui";
 import { PublicShell } from "@/components/layout/public-shell";
@@ -12,6 +12,7 @@ interface FAQItemWithOpen extends FAQItem {
 }
 
 export default function FAQPage() {
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [faqItems, setFaqItems] = useState<FAQItemWithOpen[]>(
     faqData.map((item) => ({ ...item, isOpen: false }))
@@ -45,6 +46,9 @@ export default function FAQPage() {
   // Reset search
   const handleClearSearch = () => {
     setSearchQuery("");
+    // The "Clear" button unmounts once the query is empty; move focus back
+    // to the search field so it isn't lost to <body>.
+    searchInputRef.current?.focus();
   };
 
   // Count stats
@@ -90,6 +94,7 @@ export default function FAQPage() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 aria-label="Search frequently asked questions"
                 className="h-11 rounded-lg border border-white/15 bg-transparent px-3 text-sm font-normal text-white placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                ref={searchInputRef}
               />
             </label>
             {searchQuery && (

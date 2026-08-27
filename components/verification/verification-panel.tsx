@@ -69,7 +69,7 @@ export function formatDate(value: string) {
 export function ResultItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs font-semibold uppercase text-slate-500">{label}</dt>
+      <dt className="text-xs font-semibold uppercase text-slate-400">{label}</dt>
       <dd className="mt-1 break-words text-slate-100">{value}</dd>
     </div>
   );
