@@ -2,8 +2,10 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import type { getAddress, requestAccess, signMessage } from "@stellar/freighter-api";
+import { ArtifactExport } from "@/components/proofs/artifact-export";
 import { appConfig } from "@/config/app";
 import { apiClient, bearer } from "@/lib/api/client";
+import { buildCredentialExport, buildVerificationLinkExport } from "@/lib/credentials/export";
 
 type SessionUser = {
   id: string;
@@ -364,6 +366,18 @@ export function CreateProofFlow() {
               >
                 Open public verification
               </a>
+              <ArtifactExport
+                plan={buildVerificationLinkExport(
+                  `${appConfig.appUrl}/verify?proof=${encodeURIComponent(proof.proofId)}`,
+                )}
+                title="Export verification link"
+              />
+              <ArtifactExport
+                plan={buildCredentialExport({
+                  credential: proof.credential,
+                })}
+                title="Export credential JSON"
+              />
             </div>
           ) : null}
         </section>
