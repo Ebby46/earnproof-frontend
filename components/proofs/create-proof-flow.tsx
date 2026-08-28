@@ -1,9 +1,11 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
-import { getAddress, requestAccess, signMessage } from "@stellar/freighter-api";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import type { getAddress, requestAccess, signMessage } from "@stellar/freighter-api";
+import { ArtifactExport } from "@/components/proofs/artifact-export";
 import { appConfig } from "@/config/app";
 import { apiClient, bearer } from "@/lib/api/client";
+import { buildCredentialExport, buildVerificationLinkExport } from "@/lib/credentials/export";
 
 type SessionUser = {
   id: string;
@@ -60,6 +62,28 @@ export function CreateProofFlow() {
   const [proof, setProof] = useState<ProofResponse | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const connectButtonRef = useRef<HTMLButtonElement>(null);
+  const wasConnectedRef = useRef(Boolean(initialSession?.user));
+
+  useEffect(() => {
+    if (error) {
+      errorRef.current?.focus();
+    }
+  }, [error]);
+
+  // Restore focus to the "Connect Freighter" button after disconnecting so
+  // keyboard focus doesn't fall back to <body> when the "Disconnect"
+  // button it was on unmounts. Only fires on the connected -> disconnected
+  // transition, not on initial mount.
+  useEffect(() => {
+    if (user) {
+      wasConnectedRef.current = true;
+    } else if (wasConnectedRef.current) {
+      wasConnectedRef.current = false;
+      connectButtonRef.current?.focus();
+    }
+  }, [user]);
 
   const selectedIncomePayments = useMemo(
     () =>
@@ -75,51 +99,57 @@ export function CreateProofFlow() {
   async function connectWallet() {
     setError(null);
     setStatus("Requesting Freighter wallet access...");
-    const walletAddress = await getFreighterAddress();
-    if (!walletAddress) {
+
+    try {
+      const walletAddress = await getFreighterAddress();
+      if (!walletAddress) {
+        setStatus(null);
+        setError("Freighter was not found or did not return a Stellar address.");
+        return;
+      }
+
+      const challenge = await apiClient<{
+        id: string;
+        message: string;
+        expiresAt: string;
+      }>({
+        path: "/auth/challenge",
+        method: "POST",
+        body: JSON.stringify({ walletAddress }),
+      });
+
+      setStatus("Waiting for wallet signature...");
+      const signature = await signFreighterMessage(challenge.message, walletAddress);
+      if (!signature) {
+        setStatus(null);
+        setError("Wallet did not return a signature for the challenge.");
+        return;
+      }
+
+      const verified = await apiClient<{
+        user: SessionUser;
+        session: { token: string; tokenType: "Bearer" };
+      }>({
+        path: "/auth/verify",
+        method: "POST",
+        body: JSON.stringify({
+          challengeId: challenge.id,
+          walletAddress,
+          signature,
+        }),
+      });
+
+      window.localStorage.setItem(
+        SESSION_KEY,
+        JSON.stringify({ token: verified.session.token, user: verified.user }),
+      );
+      setToken(verified.session.token);
+      setUser(verified.user);
+      setStatus("Wallet authenticated.");
+    } catch {
       setStatus(null);
-      setError("Freighter was not found or did not return a Stellar address.");
-      return;
+      setError("Wallet connection failed. Check Freighter and try again.");
     }
-
-    const challenge = await apiClient<{
-      id: string;
-      message: string;
-      expiresAt: string;
-    }>({
-      path: "/auth/challenge",
-      method: "POST",
-      body: JSON.stringify({ walletAddress }),
-    });
-
-    setStatus("Waiting for wallet signature...");
-    const signature = await signFreighterMessage(challenge.message, walletAddress);
-    if (!signature) {
-      setStatus(null);
-      setError("Wallet did not return a signature for the challenge.");
-      return;
-    }
-
-    const verified = await apiClient<{
-      user: SessionUser;
-      session: { token: string; tokenType: "Bearer" };
-    }>({
-      path: "/auth/verify",
-      method: "POST",
-      body: JSON.stringify({
-        challengeId: challenge.id,
-        walletAddress,
-        signature,
-      }),
-    });
-
-    window.localStorage.setItem(
-      SESSION_KEY,
-      JSON.stringify({ token: verified.session.token, user: verified.user }),
-    );
-    setToken(verified.session.token);
-    setUser(verified.user);
-    setStatus("Wallet authenticated.");
   }
 
   async function syncPayments() {
@@ -129,13 +159,19 @@ export function CreateProofFlow() {
 
     setError(null);
     setStatus("Syncing incoming Stellar testnet payments...");
-    await apiClient({
-      path: "/payments/sync",
-      method: "POST",
-      headers: bearer(token),
-    });
-    await refreshPayments(token);
-    setStatus("Payments synced.");
+
+    try {
+      await apiClient({
+        path: "/payments/sync",
+        method: "POST",
+        headers: bearer(token),
+      });
+      await refreshPayments(token);
+      setStatus("Payments synced.");
+    } catch {
+      setStatus(null);
+      setError("Payment sync failed. Try again.");
+    }
   }
 
   async function refreshPayments(activeToken = token) {
@@ -143,11 +179,15 @@ export function CreateProofFlow() {
       return;
     }
 
-    const response = await apiClient<Payment[]>({
-      path: "/payments",
-      headers: bearer(activeToken),
-    });
-    setPayments(response);
+    try {
+      const response = await apiClient<Payment[]>({
+        path: "/payments",
+        headers: bearer(activeToken),
+      });
+      setPayments(response);
+    } catch {
+      setError("Could not load payments. Try again.");
+    }
   }
 
   async function updateClassification(
@@ -159,13 +199,17 @@ export function CreateProofFlow() {
     }
 
     setError(null);
-    await apiClient<Payment>({
-      path: `/payments/${paymentId}/classification`,
-      method: "PATCH",
-      headers: bearer(token),
-      body: JSON.stringify({ classification }),
-    });
-    await refreshPayments(token);
+    try {
+      await apiClient<Payment>({
+        path: `/payments/${paymentId}/classification`,
+        method: "PATCH",
+        headers: bearer(token),
+        body: JSON.stringify({ classification }),
+      });
+      await refreshPayments(token);
+    } catch {
+      setError("Could not update the payment classification. Try again.");
+    }
   }
 
   async function createProof(event: FormEvent<HTMLFormElement>) {
@@ -184,23 +228,28 @@ export function CreateProofFlow() {
     setProof(null);
     setStatus("Creating signed minimum-income proof...");
 
-    const created = await apiClient<ProofResponse>({
-      path: "/proofs/minimum-income",
-      method: "POST",
-      headers: bearer(token),
-      body: JSON.stringify({
-        selectedPaymentIds: selectedIncomePayments.map((payment) => payment.id),
-        thresholdAmount,
-        assetCode: selectedIncomePayments[0].assetCode,
-        assetIssuer: selectedIncomePayments[0].assetIssuer ?? undefined,
-        periodStart: `${periodStart}T00:00:00.000Z`,
-        periodEnd: `${periodEnd}T23:59:59.000Z`,
-        expiresInDays: 30,
-      }),
-    });
+    try {
+      const created = await apiClient<ProofResponse>({
+        path: "/proofs/minimum-income",
+        method: "POST",
+        headers: bearer(token),
+        body: JSON.stringify({
+          selectedPaymentIds: selectedIncomePayments.map((payment) => payment.id),
+          thresholdAmount,
+          assetCode: selectedIncomePayments[0].assetCode,
+          assetIssuer: selectedIncomePayments[0].assetIssuer ?? undefined,
+          periodStart: `${periodStart}T00:00:00.000Z`,
+          periodEnd: `${periodEnd}T23:59:59.000Z`,
+          expiresInDays: 30,
+        }),
+      });
 
-    setProof(created);
-    setStatus("Proof created.");
+      setProof(created);
+      setStatus("Proof created.");
+    } catch {
+      setStatus(null);
+      setError("Proof creation failed. Check the selected payments and try again.");
+    }
   }
 
   function disconnect() {
@@ -240,6 +289,7 @@ export function CreateProofFlow() {
           <button
             className="h-10 w-fit rounded-md bg-cyan-300 px-4 text-xs font-semibold text-slate-950"
             onClick={connectWallet}
+            ref={connectButtonRef}
             type="button"
           >
             Connect Freighter
@@ -335,6 +385,7 @@ export function CreateProofFlow() {
           />
         </div>
         <button
+          aria-describedby={error ? "create-proof-feedback" : undefined}
           className="h-10 w-fit rounded-md bg-cyan-300 px-4 text-xs font-semibold text-slate-950 disabled:opacity-50"
           disabled={!token || selectedIncomePayments.length === 0}
           type="submit"
@@ -344,9 +395,27 @@ export function CreateProofFlow() {
       </form>
 
       {status || error || proof ? (
-        <section className="rounded-lg border border-white/10 bg-slate-950 p-5 text-sm leading-6">
-          {status ? <p className="text-slate-300">{status}</p> : null}
-          {error ? <p className="text-rose-200">{error}</p> : null}
+        <section
+          className="rounded-lg border border-white/10 bg-slate-950 p-5 text-sm leading-6"
+          id="create-proof-feedback"
+        >
+          {status ? (
+            <p aria-live="polite" className="text-slate-300">
+              {status}
+            </p>
+          ) : null}
+          {error ? (
+            <p
+              aria-live="assertive"
+              className="text-rose-200 focus-visible:outline-none"
+              id="create-proof-error"
+              ref={errorRef}
+              role="alert"
+              tabIndex={-1}
+            >
+              {error}
+            </p>
+          ) : null}
           {proof ? (
             <div className="mt-4 grid gap-2 text-slate-300">
               <p>
@@ -364,6 +433,18 @@ export function CreateProofFlow() {
               >
                 Open public verification
               </a>
+              <ArtifactExport
+                plan={buildVerificationLinkExport(
+                  `${appConfig.appUrl}/verify?proof=${encodeURIComponent(proof.proofId)}`,
+                )}
+                title="Export verification link"
+              />
+              <ArtifactExport
+                plan={buildCredentialExport({
+                  credential: proof.credential,
+                })}
+                title="Export credential JSON"
+              />
             </div>
           ) : null}
         </section>
@@ -416,14 +497,15 @@ function PaymentRow({
         <p className="font-medium text-white">
           {payment.assetCode} incoming payment
         </p>
-        <p className="mt-1 break-words text-xs text-slate-500">
+        <p className="mt-1 break-words text-xs text-slate-400">
           {payment.stellarTransactionHash}
         </p>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-slate-400">
           {new Date(payment.occurredAt).toLocaleString()}
         </p>
       </div>
       <select
+        aria-label="Payment classification"
         className="h-10 rounded-md border border-white/10 bg-slate-900 px-3 text-white"
         onChange={(event) =>
           onClassify(event.target.value as PaymentClassification)
@@ -464,18 +546,33 @@ function Field({
   );
 }
 
+// The Freighter wallet SDK is loaded on demand, only once a worker actually
+// starts the connect flow on this route. This keeps `@stellar/freighter-api`
+// out of the initial First Load JS for /proofs/create (and, by construction,
+// out of every public route that never renders this component).
+async function loadFreighter(): Promise<{
+  getAddress: typeof getAddress;
+  requestAccess: typeof requestAccess;
+  signMessage: typeof signMessage;
+}> {
+  return import("@stellar/freighter-api");
+}
+
 async function getFreighterAddress() {
-  const access = await requestAccess().catch(() => null);
+  const freighter = await loadFreighter();
+  const access = await freighter.requestAccess().catch(() => null);
   if (access?.address) {
     return access.address;
   }
 
-  const address = await getAddress().catch(() => null);
+  const address = await freighter.getAddress().catch(() => null);
   return address?.address ?? null;
 }
 
 async function signFreighterMessage(message: string, walletAddress: string) {
-  const response = await signMessage(message, {
+  const freighter = await loadFreighter();
+  const response = await freighter
+    .signMessage(message, {
       networkPassphrase: appConfig.stellarNetworkPassphrase,
       address: walletAddress,
     })

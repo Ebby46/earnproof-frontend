@@ -12,8 +12,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest --run",
-    "test:watch": "vitest"
+    "test": "jest",
+    "generate:api-types": "node scripts/generate-api-types/index.js",
+    "test:contracts": "node scripts/check-api-drift.js && node scripts/generate-api-types/index.js --check",
+    "test:e2e": "playwright test",
+    "test:e2e:a11y": "playwright test",
+    "test:e2e:a11y:report": "playwright show-report",
+    "test:e2e:visual": "playwright test --config=playwright.config.ts",
+    "test:e2e:visual:update": "playwright test --config=playwright.config.ts --update-snapshots",
+    "perf:check": "node scripts/performance/check-budgets.js"
   },
   "dependencies": {
     "@stellar/freighter-api": "^6.0.1",
@@ -25,18 +32,24 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
-    "@testing-library/jest-dom": "^6.1.5",
-    "@testing-library/react": "^14.1.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.6",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitest/ui": "^1.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
     "tailwindcss": "^4",
-    "typescript": "^5",
-    "vitest": "^1.1.0"
+    "tsx": "^4.23.12",
+    "typescript": "^5"
   },
   "overrides": {
     "nanoid": "3.3.17"

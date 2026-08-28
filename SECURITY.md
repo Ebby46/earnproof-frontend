@@ -18,3 +18,33 @@ Do not include private keys, seed phrases, real salary data, or private payment 
 
 The current project targets Stellar testnet only. Mainnet deployments and production financial claims are out of scope until explicitly documented.
 
+## Browser security policy
+
+The Next.js app ships an explicit Content Security Policy and related headers from `config/security-headers.ts`. Middleware refreshes the CSP with a per-request nonce so Next.js can attach that nonce to its own runtime scripts. `'unsafe-inline'` and host wildcards are not part of the default policy.
+
+| Directive / header | Default | Why |
+| --- | --- | --- |
+| `default-src` | `'self'` | Deny unlisted fetches by default. |
+| `script-src` | `'self' 'nonce-…' 'strict-dynamic'` | Next.js runtime scripts are nonce-tagged. `'strict-dynamic'` is not a host wildcard; it only trusts scripts loaded by an already-nonced script. |
+| `style-src` | `'self' 'nonce-…'` | Tailwind/App Router CSS plus nonce-tagged font fallback styles. No `'unsafe-inline'`. |
+| `connect-src` | app origin, API origin, Stellar Horizon | Wallet sessions talk to the EarnProof API. Freighter itself is an extension and does not need an extra host. Horizon is listed for documented testnet network calls. |
+| `frame-src` / `frame-ancestors` / `X-Frame-Options` | `'none'` / `DENY` | Proof and QR pages must not be framed. |
+| `object-src` | `'none'` | Block plugins. |
+| `img-src` | `'self' data: blob:` | Logo, QR camera frames, and generated QR images. |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Avoid leaking proof IDs in referrers. |
+| `Permissions-Policy` | `camera=(self)`; mic/geo/payment/usb disabled | QR scanning on `/verify/scan` is the only camera use. |
+| `Strict-Transport-Security` | set when `NEXT_PUBLIC_APP_URL` is `https:` | Local HTTP must keep working. |
+
+### Required origins
+
+Preview (`VERCEL_ENV=preview`) and production (`VERCEL_ENV=production`) fail to boot when `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_STELLAR_NETWORK`, `NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE`, or `NEXT_PUBLIC_STELLAR_HORIZON_URL` are missing or invalid.
+
+Local development and CI `next build` (no Vercel env) use the defaults in `.env.example`. Set `EARNPROOF_REQUIRE_SECURITY_ORIGINS=true` to force the fail-closed check.
+
+### External links
+
+Untrusted URLs are never written into `href`. `ExternalLink` and `toSafeExternalHref` allow only configured HTTPS origins (help centre, optional explorer) and always set `rel="noopener noreferrer"`. `javascript:`, `data:`, `file:`, and `blob:` schemes are rejected.
+
+### Nonce justification
+
+Next.js emits small inline bootstrap scripts. A per-request base64 nonce is generated in `middleware.ts`, applied to `Content-Security-Policy`, and forwarded as `x-nonce` so the framework can tag those scripts. That is the only reason a nonce source appears in `script-src` / `style-src`. Do not add `'unsafe-inline'` or `*` to those directives without a new, documented justification.
